@@ -95,6 +95,7 @@ static bool noLibraryButtonFlag = false;
 static bool noSearchBarFlag = false;
 static string welcomeHTML;
 static string catalogOpenSearchDescription;
+static string contentOpenSearchDescription;
 static std::atomic_bool isVerbose(false);
 static std::string rootLocation = "";
 static std::map<std::string, std::string> extMimeTypes;
@@ -516,18 +517,27 @@ static struct MHD_Response* handle_skin(RequestContext* request)
       content.data(), content.size(), "", mimeType, deflated, true);
 }
 
-static struct MHD_Response* handle_search(RequestContext* request)
-{
-  if (isVerbose.load()) {
-    printf("** running handle_search\n");
+static bool is_atom_requested(RequestContext* request) {
+  std::string accept_header = request->get_header("Accept");
+
+  if (accept_header.find("application/atom+xml") != std::string::npos) {
+    return true;
   }
 
+  return false;
+}
+
+
+static struct MHD_Response* handle_search_results(RequestContext* request) {
   std::string content;
   std::string mimeType;
   std::string httpRedirection;
 
   std::string humanReadableBookId;
   std::string patternString;
+
+  bool atomResult = is_atom_requested(request);
+
   try {
     humanReadableBookId = request->get_argument("content");
   } catch (const std::out_of_range&) {}
@@ -555,6 +565,11 @@ static struct MHD_Response* handle_search(RequestContext* request)
   auto reader_searcher = get_from_humanReadableBookId(humanReadableBookId);
   auto reader = reader_searcher.first;
   auto searcher = reader_searcher.second;
+
+  std::string descriptionUrl = "/"+rootLocation+"/search";
+
+  searcher->setSearchDescriptionUrl(descriptionUrl);
+
   bool cacheEnabled = !(searcher == globalSearcher);
 
   /* Try first to load directly the article */
@@ -605,7 +620,14 @@ static struct MHD_Response* handle_search(RequestContext* request)
         searcher->search(patternString,
                          start, end, isVerbose.load());
       }
-      content = searcher->getHtml();
+
+      if (atomResult) {
+        content = searcher->getAtomFeed();
+      }
+      else {
+        content = searcher->getHtml();
+      }
+      
     } catch (const std::exception& e) {
       std::cerr << e.what() << std::endl;
     }
@@ -626,7 +648,53 @@ static struct MHD_Response* handle_search(RequestContext* request)
                         mimeType,
                         deflated,
                         cacheEnabled);
+
 }
+
+static struct MHD_Response* handle_search_descriptor(RequestContext* request) {
+  if (isVerbose.load()) {
+    printf("** running handle_search_descriptor\n");
+  }
+
+  std::string content;
+  std::string mimeType;
+
+  content = contentOpenSearchDescription;
+  mimeType = "application/opensearchdescription+xml";
+
+  bool deflated = request->can_compress() && compress_content(content, mimeType);
+
+  return build_response(
+      content.data(), content.size(), "", mimeType, deflated, true);
+
+}
+
+static struct MHD_Response* handle_search(RequestContext* request)
+{
+  if (isVerbose.load()) {
+    printf("** running handle_search\n");
+  }
+
+  std::string host;
+  std::string url;
+  try {;
+    url  = request->get_url_part(1);
+  } catch (const std::out_of_range&) {
+    url = "";
+  }
+
+  std::string content;
+  std::string mimeType;
+
+  if (url == "searchdescription.xml") {
+    return handle_search_descriptor(request);
+  }
+  else {
+    return handle_search_results(request);
+  }
+
+}
+
 
 static struct MHD_Response* handle_random(RequestContext* request)
 {
@@ -884,7 +952,7 @@ static int accessHandlerCallback(void* cls,
       response = handle_catalog(&request);
     } else if (request.get_url() == "/meta") {
       response = handle_meta(&request);
-    } else if (request.get_url() == "/search") {
+    } else if (startswith(request.get_url(), "/search")) {
       response = handle_search(&request);
     } else if (request.get_url() == "/suggest") {
       response = handle_suggest(&request);
@@ -1134,6 +1202,9 @@ int main(int argc, char** argv)
   /* Compute the OpenSearch description */
   catalogOpenSearchDescription = RESOURCE::opensearchdescription_xml;
   catalogOpenSearchDescription = replaceRegex(catalogOpenSearchDescription, rootLocation, "__ROOT_LOCATION__");
+
+  contentOpenSearchDescription = RESOURCE::opensearchdescription_content_xml;
+  contentOpenSearchDescription = replaceRegex(contentOpenSearchDescription, rootLocation, "__ROOT_LOCATION__");
 
 
 #ifndef _WIN32

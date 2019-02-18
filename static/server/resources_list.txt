@@ -23,3 +23,4 @@ taskbar.css
 taskbar.html.part
 global_taskbar.html.part
 opensearchdescription.xml
+opensearchdescription_content.xml
