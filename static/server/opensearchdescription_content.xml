@@ -5,5 +5,5 @@
   <Url type="application/atom+xml" 
        xmlns:atom="http://www.w3.org/2005/Atom"
        indexOffset="0"
-       template="/__ROOT_LOCATION__/search?pattern={searchTerms}&lang={language}&count={count}&start={startIndex}"/>
+       template="/__ROOT_LOCATION__/search?pattern={searchTerms}&amp;lang={language}&amp;count={count}&amp;start={startIndex}"/>
 </OpenSearchDescription>
